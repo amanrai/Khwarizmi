@@ -1,4 +1,5 @@
 # Ignore build directories
+i8/
 build/
 dist/
 *.egg-info/
