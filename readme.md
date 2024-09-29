@@ -7,7 +7,7 @@ An INT8 implementation, hopefully eventually usable in python to build and infer
 To learn. And for the lulz. And because at INT8, modern CPUs are blazing fast. 
 
 ### So you think you will get as fast as a GPU?
-No. Faster hardware is faster. The gains in speed, however, should translate, eventually, to any hardware. The aim here is to run viable networks on the edge at viable speeds. 
+No. Faster hardware is faster. The gains in speed should translate, eventually, to any hardware. The aim here is to run viable networks on the edge at viable speeds. 
 
 #### So how do I run this thing?
 As of this writing, you need an x86 CPU that supports AVX 512 intrinsics. 
