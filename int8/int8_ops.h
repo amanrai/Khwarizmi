@@ -2,11 +2,14 @@
 #include <stddef.h>
 
 typedef struct iArray{
-  int8_t* data;
-  size_t *shape;
-  size_t size;
-  size_t rank;
+    int8_t* data;
+    size_t *shape;
+    size_t size;
+    size_t rank;
 } iArray;
+
+void printiArray(iArray *arr);
+void deep_print(iArray *arr, int dimension, int start_at);
 
 iArray *create(size_t *shape, size_t rank);
 iArray *copy(iArray *arr);
@@ -17,6 +20,7 @@ iArray *sub(iArray *arr1, iArray *arr2);
 iArray *mul(iArray *arr1, iArray *arr2);
 iArray *truediv(iArray *arr1, iArray *arr2);
 iArray *mod(iArray *arr1, iArray *arr2);
+// iArray *matmul(iArray *arr1, iArray *arr2)
 
 iArray *addScalar(iArray *arr, int8_t scalar);
 iArray *subScalar(iArray *arr, int8_t scalar);

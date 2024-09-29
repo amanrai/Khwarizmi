@@ -27,9 +27,15 @@ iArray *create(size_t *shape, size_t rank){
     }
     arr->size *= shape[i];
     }
-    arr->data = (int8_t *)malloc(arr->size * sizeof(int8_t));
-    //do an aligned alloc to 32 bytes
-    // posix_memalign((void **)&arr->data, 32, arr->size * sizeof(int8_t));
+    // arr->data = (int8_t *)malloc(arr->size * sizeof(int8_t));
+    int result = posix_memalign((void **)&arr->data, 32, arr->size * sizeof(int8_t));
+
+    if (result != 0){
+        fprintf(stderr, "Allocation of aligned memory failed.\n");
+        free(arr);
+        free(arr->shape);
+        exit(1);
+    }
     return arr;
 }
 
@@ -130,13 +136,42 @@ void free_iArray(iArray *arr){
     free(arr);
 }
 
-void print_iArray(iArray *arr){
-    for(size_t i = 0; i < arr->size; i++){
-    printf("%d ", arr->data[i]);
+void printiArray(iArray *arr) {
+
+    if (arr == NULL || arr->data == NULL) {
+        printf("Invalid array\n");
+        return;
     }
+    printf("\niArray: (");
+    for (size_t i = 0; i < arr->rank; i++) {
+        printf("%ld", arr->shape[i]);
+        if (i < arr->rank - 1) {
+            printf(", ");
+        }
+    }
+    printf(")\n");
+    deep_print(arr, 0, 0);
     printf("\n");
 }
 
+void deep_print(iArray *arr, int dimension, int start_at) {
+    if (dimension == arr->rank - 1) {
+        printf("%*s[", dimension*2, "");        
+        for (size_t i = 0; i < arr->shape[dimension]; i++) {
+            printf("%d", arr->data[start_at*arr->shape[dimension] + i]);
+            if (i < arr->shape[dimension] - 1) {
+                printf(", ");
+            }
+        }
+        printf("]\n");
+    } else {
+        printf("%*s[\n", dimension*2, "");
+        for (size_t i = 0; i < arr->shape[dimension]; i++) {
+            deep_print(arr, dimension + 1, start_at*arr->shape[dimension] + i);
+        }
+        printf("\n%*s]", dimension*2, "");
+    }
+}
 
 #ifndef USING_INTRINSICS
 //This is the default implementation if no intrinsics are available
@@ -219,13 +254,14 @@ iArray *absiArray(iArray *arr){
 #endif
 
 int main(){
-    size_t shape[2] = {2, 2};
-    iArray *arr1 = from_random(shape, 2, 0, 10);
-    print_iArray(arr1);
-    iArray *arr2 = from_random(shape, 2, -10, 10);
-    print_iArray(arr2);
-    iArray *result = add(arr1, arr2);
-    print_iArray(result);
+    int rank = 2;
+    size_t shape[2] = {16,16};
+    iArray *arr1 = from_random(shape, rank, 0, 10);
+    printiArray(arr1);
+    iArray *arr2 = from_random(shape, rank, -10, 10);
+    printiArray(arr2);
+    iArray *result = mul(arr1, arr2);
+    printiArray(result);
     free_iArray(arr1);
     free_iArray(arr2);
     free_iArray(result);
