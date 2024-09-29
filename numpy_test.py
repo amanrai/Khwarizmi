@@ -2,7 +2,7 @@ import numpy as np
 import time
 
 import torch
-size = 1024
+size = 8192
 a = np.random.uniform(0, 1, (size, size))
 b = np.random.uniform(0,1, (size, size))
 
