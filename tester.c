@@ -1,73 +1,41 @@
-#include <stdio.h>
-#include <stdint.h> // For uint8_t
+#include <immintrin.h>
 #include <omp.h>
 #include <stdlib.h>
 #include <time.h>
-#include <immintrin.h> 
-#include <stdbool.h>
+#include <stdio.h>
 
-// void extract_mantissa(uint32_t val) {
-//     int32_t mantissa = val && 0x7FFFFF;
-//     print_bits(mantissa);
-//     uint8_t f_mantissa = (mantissa >> 19) & 0xF;
-//     print_bits(f_mantissa);
-//     printf("%d\n", mantissa);
-// }
-
-// int main() {
-//     float x = 15.5;
-//     printf("\nOriginal Float Value: %f", x);
-//     fp8 _v = from_f32(x);    
-//     float y = to_f32(_v);
-//     printf("\nReconverted to f32:%f", y);
-//     fp8 _w = from_f32_143(x);
-//     float z = to_f32_143(_w);
-//     printf("\nReconverted 143 to f32:%f\n", z);
-// }
-
-void print_bits(int8_t val) {
-    for (int i = 7; i >= 0; i--) {
-        printf("%d", (val >> i) & 1);
-    }
-    printf("\n");
-}
-
-
-void ifma_tiled(int8_t *a, int8_t *b, int8_t *c, int size) {
-    int tile_size=64;
-
-    #pragma omp parallel for
-    for (int i=0; i < size; i+=tile_size) {
-        for (int k = 0; k < size; k++) {
-            for (int j = 0; j < size; j+=tile_size) {
-                for (int ii = i; ii < i+tile_size; ii++) {
-                    for (int jj = j; jj < j+tile_size; jj++) {
-                        c[ii*size + jj] += a[ii*size + k] * b[k*size + jj];
-                    }
-                }
+void ifma(int8_t *a, int8_t *b, int8_t *c, int size) {
+    for (int i=0; i < size; i++) {
+        for (int k=0; k < size; k++) {
+            for (int j=0; j < size; j++) {
+                c[i*size+j] += a[i*size + k] * b[k*size + j];
             }
         }
     }
 }
 
-
-
 void ifma_tiled_strided(int8_t *a, int8_t *b, int8_t *c, int size) {
-    const int tile_size = 128;
-    const int inner_tile = 8;
-    const int simd_size = 64;
+    const int tile_size = 256;
+    const int inner_tile = 128;
 
     #pragma omp parallel for collapse(2)
     for (int i = 0; i < size; i += tile_size) {
         for (int j = 0; j < size; j += tile_size) {
             for (int ii = i; ii < i + tile_size && ii < size; ii += inner_tile) {
-                for (int k = 0; k < size; k+=simd_size) {
-                    __m512 a_val[inner_tile];
-                    for (int x=0; x < inner_tile; x++) {
-                        a_val[x] = _mm512_set1_epi8(&a[ii*size + x]);
-                    }
-                    for (int jj=j; jj < j + tile_size && jj < size; jj+=simd_size) {
-                        __m512 b_val = __m512
+                for (int k = 0; k < size; k++) {
+                    __m512i val = _mm512_loadu_si512((__m512i *)&a[ii*size + k]);
+                    for (int jj = j; jj < j + tile_size && jj < size; jj += inner_tile) {
+                        __m512i b_val = _mm512_loadu_si512((__m512i *)&b[k*size + jj]);
+                        __m512i c_val = _mm512_loadu_si512((__m512i *)&c[ii*size + jj]);
+                        
+                        __m512i lower = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(val));
+                        lower = _mm512_mullo_epi16(lower, _mm512_cvtepu8_epi16(_mm512_castsi512_si256(b_val)));
+                        __m512i upper = _mm512_cvtepu8_epi16(_mm512_extracti64x4_epi64(val, 1));
+                        upper = _mm512_mullo_epi16(upper, _mm512_cvtepu8_epi16(_mm512_extracti64x4_epi64(b_val, 1)));
+                        __m512i res = _mm512_packus_epi16(lower, upper);
+                        
+                        c_val = _mm512_add_epi8(c_val, res);
+                        _mm512_storeu_si512((__m512i *)&c[ii*size + jj], c_val);
                     }
                 }
             }
@@ -75,25 +43,54 @@ void ifma_tiled_strided(int8_t *a, int8_t *b, int8_t *c, int size) {
     }
 }
 
+void ifma_tiled_strided_arbitrary(int8_t *a, int8_t *b, int8_t *c, int m, int n, int k) {
+    const int tile_size = 256;
+    const int inner_tile = 64;
+    const int vec_size = 64;  // 512 bits / 8 bits = 64 elements
 
-bool isEqual(const int8_t *a, const int8_t *b, int size) {
-    for (int i=0; i < size * size; i++) {
-        // printf("\n%d \? %d\n", a[i], b[i]);
-        if (a[i] != b[i]) {
-            return false;
-        }
-    }
-    return true;
-}
+    #pragma omp parallel for collapse(2)
+    for (int i = 0; i < m; i += tile_size) {
+        for (int j = 0; j < n; j += tile_size) {
+            for (int ii = i; ii < i + tile_size && ii < m; ii += inner_tile) {
+                for (int kk = 0; kk < k; kk++) {
+                    for (int jj = j; jj < j + tile_size && jj < n; jj += vec_size) {
+                        __m512i c_val = _mm512_setzero_si512();
+                        
+                        if (jj + vec_size <= n) {
+                            c_val = _mm512_loadu_si512((__m512i *)&c[ii*n + jj]);
+                        } else {
+                            // Handle edge case: load partial vector
+                            c_val = _mm512_maskz_loadu_epi8((1ULL << (n - jj)) - 1, &c[ii*n + jj]);
+                        }
 
+                        for (int iii = 0; iii < inner_tile && ii + iii < m; iii++) {
+                            __m512i a_val = _mm512_set1_epi8(a[(ii+iii)*k + kk]);
+                            __m512i b_val;
+                            
+                            if (jj + vec_size <= n) {
+                                b_val = _mm512_loadu_si512((__m512i *)&b[kk*n + jj]);
+                            } else {
+                                // Handle edge case: load partial vector
+                                b_val = _mm512_maskz_loadu_epi8((1ULL << (n - jj)) - 1, &b[kk*n + jj]);
+                            }
 
-
-void ifma(int8_t *a, int8_t *b, int8_t *c, int size) {
-    #pragma omp parallel for
-    for (int i=0; i < size; i++) {
-        for (int k = 0; k < size; k++) {
-            for (int j = 0; j < size; j++) {
-                c[i*size + j] += a[i*size + k] * b[k*size + j];
+                            __m512i lower = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(a_val));
+                            lower = _mm512_mullo_epi16(lower, _mm512_cvtepu8_epi16(_mm512_castsi512_si256(b_val)));
+                            __m512i upper = _mm512_cvtepu8_epi16(_mm512_extracti64x4_epi64(a_val, 1));
+                            upper = _mm512_mullo_epi16(upper, _mm512_cvtepu8_epi16(_mm512_extracti64x4_epi64(b_val, 1)));
+                            __m512i res = _mm512_packus_epi16(lower, upper);
+                            
+                            c_val = _mm512_add_epi8(c_val, res);
+                        }
+                        
+                        if (jj + vec_size <= n) {
+                            _mm512_storeu_si512((__m512i *)&c[ii*n + jj], c_val);
+                        } else {
+                            // Handle edge case: store partial vector
+                            _mm512_mask_storeu_epi8(&c[ii*n + jj], (1ULL << (n - jj)) - 1, c_val);
+                        }
+                    }
+                }
             }
         }
     }
@@ -101,29 +98,26 @@ void ifma(int8_t *a, int8_t *b, int8_t *c, int size) {
 
 
 int main() {
-    int size=1024;
-    int8_t *a = (int8_t *)malloc(size*size*sizeof(int8_t));
-    int8_t *b = (int8_t *)malloc(size*size*sizeof(int8_t));
-    int8_t *c = (int8_t *)malloc(size*size*sizeof(int8_t));
-    int8_t *d = (int8_t *)malloc(size*size*sizeof(int8_t));
+    const int size = 1024;
+    int8_t *a = (int8_t *)malloc(size * size * sizeof(int8_t));
+    int8_t *b = (int8_t *)malloc(size * size * sizeof(int8_t));
+    int8_t *c = (int8_t *)malloc(size * size * sizeof(int8_t));
 
-    for (int i=0; i < size*size; i++) {
+    for (int i = 0; i < size * size; i++) {
         a[i] = rand() % 256;
         b[i] = rand() % 256;
-        c[i] = 0;
-        d[i] = 0;
     }
 
-    ifma_tiled_strided(a, b, c, size);
-    ifma(a, b, d, size);
-    printf("Fast Matmul matches Slow Matmul: %d\n", isEqual(c, d, size));
-    // double start = omp_get_wtime();
-    // int num_iter = 100;
-    // for (int i=0; i < num_iter; i++) ifma(a, b, c, size);
-    // double end = omp_get_wtime();
-    // double _t = end - start;
-    // _t *= (1000/num_iter);
-    // printf("\nTiled Time taken: %f ms per iteration;\n", _t);  
-    // ifma(a, b, d, size);
-    // printf("Fast Matmul matches Slow Matmul: %d\n", isEqual(c, d, size));
+    int num_iter = 100; 
+    double start = omp_get_wtime();
+    for (int i = 0; i < num_iter; i++) ifma_tiled_strided(a, b, c, size);
+    double end = omp_get_wtime();
+    double _t = end - start;
+    printf("Time: %f ms per iteration\n", (_t * 1000/num_iter));
+
+    free(a);
+    free(b);
+    free(c);
+
+    return 0;
 }
