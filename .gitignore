@@ -1,0 +1,12 @@
+# Ignore build directories
+build/
+dist/
+*.egg-info/
+
+# Ignore compiled Python files
+*.pyc
+__pycache__/
+
+# Ignore compiled C extensions
+*.so
+*.pyd
