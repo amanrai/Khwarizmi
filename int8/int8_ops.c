@@ -136,6 +136,11 @@ void free_iArray(iArray *arr){
     free(arr);
 }
 
+void free_iTensor(iTensor *tensor){
+    free_iArray(tensor->arr);
+    free(tensor);
+}
+
 void printiArray(iArray *arr) {
 
     if (arr == NULL || arr->data == NULL) {
@@ -152,6 +157,60 @@ void printiArray(iArray *arr) {
     printf(")\n");
     deep_print(arr, 0, 0);
     printf("\n");
+}
+
+iTensor *quantize(float *data) {
+    // https://www.youtube.com/watch?v=0VdNflU08yA - Asymmetric Quantization.
+    iTensor *tensor = (iTensor *)malloc(sizeof(iTensor));
+    tensor->arr = create(shape, rank);
+    float min = data[0];
+    float max = data[0];
+    for(size_t i = 0; i < tensor->arr->size; i++){
+        if (data[i] < min){
+            min = data[i];
+        }
+        if (data[i] > max){
+            max = data[i];
+        }
+    }
+    float range = max - min;
+    float scale = range / 255;
+    int8_t zero_point = (int8_t)round(-min / scale);
+    tensor->scale = scale;
+    tensor->zero_point = zero_point;
+    for(size_t i = 0; i < tensor->arr->size; i++){
+        tensor->arr->data[i] = (int8_t)round(data[i] / scale) + zero_point;
+    }
+    return tensor;
+}
+
+iTensor *quantize_symmetric(float *data) {
+    // https://www.youtube.com/watch?v=0VdNflU08yA - Symmetric Quantization.
+    iTensor *tensor = (iTensor *)malloc(sizeof(iTensor));
+    tensor->arr = create(shape, rank);
+    float max = data[0];
+    for(size_t i = 0; i < tensor->arr->size; i++){
+        if (data[i] > max){
+            max = data[i];
+        }
+    }
+    float scale = max / 127;
+    int8_t zero_point = 0;
+    tensor->scale = scale;
+    tensor->zero_point = zero_point;
+    for(size_t i = 0; i < tensor->arr->size; i++) {
+        tensor->arr->data[i] = (int8_t)round(data[i] / scale);
+    }
+    return tensor;
+}
+
+float *dequantize(iTensor *tensor){
+    //Type of Quantization shouldn't matter because the zero point is 0.
+    float *data = (float *)malloc(tensor->arr->size * sizeof(float));
+    for(size_t i = 0; i < tensor->arr->size; i++){
+        data[i] = (tensor->arr->data[i] - tensor->zero_point) * tensor->scale;
+    }
+    return data;
 }
 
 void deep_print(iArray *arr, int dimension, int start_at) {

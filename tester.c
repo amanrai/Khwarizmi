@@ -1,4 +1,3 @@
-#include <immintrin.h>
 #include <omp.h>
 #include <stdlib.h>
 #include <time.h>
@@ -14,6 +13,8 @@ void ifma(int8_t *a, int8_t *b, int8_t *c, int size) {
     }
 }
 
+#if defined(__AVX512F__)
+#include <immintrin.h>
 void ifma_tiled_strided(int8_t *a, int8_t *b, int8_t *c, int size) {
     const int tile_size = 256;
     const int inner_tile = 128;
@@ -95,8 +96,9 @@ void ifma_tiled_strided_arbitrary(int8_t *a, int8_t *b, int8_t *c, int m, int n,
         }
     }
 }
-
-void avx2_tiled_strided_arbitrary(int8_t *a, int8_t *b, int8_t *c, int m, int n, int k) {
+#elif defined(__AVX2__)
+#include <immintrin.h>
+void ifma_tiled_strided(int8_t *a, int8_t *b, int8_t *c, int m, int n, int k) {
     const int tile_size = 128;
     const int inner_tile = 32;
     const int vec_size = 32;  // 256 bits / 8 bits = 32 elements
@@ -149,7 +151,74 @@ void avx2_tiled_strided_arbitrary(int8_t *a, int8_t *b, int8_t *c, int m, int n,
         }
     }
 }
+#elif defined (__ARM_NEON)
+#include <arm_neon.h>
+void ifma_tiled_strided(int8_t *a, int8_t *b, int8_t *c, int size) {
+    const int tile_size = 64;
+    const int vector_size = 16;  // NEON processes 16 int8_t values at a time
 
+    #pragma omp parallel for collapse(2)
+    for (int i = 0; i < size; i += tile_size) {
+        for (int j = 0; j < size; j += tile_size) {
+            for (int k = 0; k < size; k += tile_size) {
+                for (int ii = i; ii < i + tile_size && ii < size; ii += vector_size) {
+                    for (int jj = j; jj < j + tile_size && jj < size; jj += vector_size) {
+                        int32x4_t c_vec = vdupq_n_s32(0);
+                        
+                        for (int kk = k; kk < k + tile_size && kk < size; kk++) {
+                            int8x16_t a_vec = vld1q_s8(&a[ii*size + kk]);
+                            int8x16_t b_vec = vld1q_s8(&b[kk*size + jj]);
+                            
+                            // // Subtract zero points
+                            // int16x8_t a_low = vsubl_s8(vget_low_s8(a_vec), vdup_n_s8(a->zero_point));
+                            // int16x8_t a_high = vsubl_s8(vget_high_s8(a_vec), vdup_n_s8(a->zero_point));
+                            // int16x8_t b_low = vsubl_s8(vget_low_s8(b_vec), vdup_n_s8(b->zero_point));
+                            // int16x8_t b_high = vsubl_s8(vget_high_s8(b_vec), vdup_n_s8(b->zero_point));
+                            
+                            // c_vec = vaddq_s32(c_vec, vmlal_s16(vmlal_s16(vdupq_n_s32(0), 
+                            //                                              vget_low_s16(a_low), vget_low_s16(b_low)),
+                            //                                   vget_high_s16(a_low), vget_high_s16(b_low)));
+                            // c_vec = vaddq_s32(c_vec, vmlal_s16(vmlal_s16(vdupq_n_s32(0), 
+                            //                                              vget_low_s16(a_high), vget_low_s16(b_high)),
+                            //                                   vget_high_s16(a_high), vget_high_s16(b_high)));
+
+                        }
+                        
+                        // vst1q_s32(&c[(ii/4)*size + jj], c_vec);
+                    }
+                }
+            }
+        }
+    }
+
+}
+
+void matmul_tiled_neon(float *a, float *b, float *c, int size) {
+    const int tile_size = 8;
+    const int vector_size = 4;  // NEON processes 4 floats at a time
+    #pragma omp parallel for collapse(2)
+    for (int i = 0; i < size; i += tile_size) {
+        for (int j = 0; j < size; j += tile_size) {
+            for (int k = 0; k < size; k += tile_size) {
+                for (int ii = i; ii < i + tile_size && ii < size; ii += vector_size) {
+                    for (int jj = j; jj < j + tile_size && jj < size; jj += vector_size) {
+                        float32x4_t c_vec = vld1q_f32(&c[ii*size + jj]);
+                        
+                        for (int kk = k; kk < k + tile_size && kk < size; kk++) {
+                            float32x4_t a_vec = vld1q_f32(&a[ii*size + kk]);
+                            float32x4_t b_vec = vld1q_f32(&b[kk*size + jj]);
+                            c_vec = vmlaq_f32(c_vec, a_vec, b_vec);
+                        }
+                        
+                        vst1q_f32(&c[ii*size + jj], c_vec);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#endif
 
 int main() {
     const int size = 8192;
