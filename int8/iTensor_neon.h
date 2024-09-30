@@ -8,7 +8,7 @@
 #include <arm_neon.h>
 #include "iArray_neon.h"
 
-void rebaseIntrinsics(iTensor *A, float new_scale, int8_t new_zero_point) {
+void rebaseIntrinsics(iTensor *A, float new_scale, i8 new_zero_point) {
     //return a new iTensor with data from A rebased to the new scale and zero point
 
     iTensor *B = (iTensor *)malloc(sizeof(iTensor));
@@ -39,7 +39,7 @@ void rebaseIntrinsics(iTensor *A, float new_scale, int8_t new_zero_point) {
     }
     
     for(; i < arr->size; i++){
-        out->data[i] = (int8_t)round((arr->data[i] - A->zero_point) * A->scale / new_scale) + new_zero_point;
+        out->data[i] = (i8)round((arr->data[i] - A->zero_point) * A->scale / new_scale) + new_zero_point;
     }
     B->scale = new_scale;
     B->zero_point = new_zero_point;

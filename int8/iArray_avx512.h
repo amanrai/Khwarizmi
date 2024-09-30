@@ -29,7 +29,7 @@ iArray *add(iArray *arr1, iArray *arr2){
     return new_arr;
 }
 
-iArray *addScalar(iArray *arr, int8_t scalar){
+iArray *addScalar(iArray *arr, i8 scalar){
     
     iArray *new_arr = copy(arr);
     size_t i = 0;
@@ -64,7 +64,7 @@ iArray *sub(iArray *arr1, iArray *arr2){
     return new_arr;
 }
 
-iArray *subScalar(iArray *arr, int8_t scalar){
+iArray *subScalar(iArray *arr, i8 scalar){
     iArray *new_arr = copy(arr);
     size_t i = 0;
     for(; i < arr->size; i+=64){
@@ -99,7 +99,7 @@ iArray *mul(iArray *arr1, iArray *arr2) {
     return new_arr;
 }
 
-iArray *mulScalar(iArray *arr, int8_t scalar) {
+iArray *mulScalar(iArray *arr, i8 scalar) {
     iArray *new_arr = copy(arr);
     size_t i = 0;
     for (; i + 64 <= arr->size; i += 64) {

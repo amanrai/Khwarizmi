@@ -1,8 +1,12 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#define i8 int8_t
+#define iMAX 127
+#define iMIN -127
+
 typedef struct iArray{
-    int8_t* data;
+    i8* data;
     size_t *shape;
     size_t size;
     size_t rank;
@@ -10,7 +14,7 @@ typedef struct iArray{
 
 typedef struct iTensor {
     iArray *arr;
-    int8_t zero_point;
+    i8 zero_point;
     float scale;
 } iTensor;
 
@@ -28,11 +32,11 @@ iArray *truediv(iArray *arr1, iArray *arr2);
 iArray *mod(iArray *arr1, iArray *arr2);
 // iArray *matmul(iArray *arr1, iArray *arr2)
 
-iArray *addScalar(iArray *arr, int8_t scalar);
-iArray *subScalar(iArray *arr, int8_t scalar);
-iArray *mulScalar(iArray *arr, int8_t scalar);
-iArray *divScalar(iArray *arr, int8_t scalar);
-iArray *modScalar(iArray *arr, int8_t scalar);
+iArray *addScalar(iArray *arr, i8 scalar);
+iArray *subScalar(iArray *arr, i8 scalar);
+iArray *mulScalar(iArray *arr, i8 scalar);
+iArray *divScalar(iArray *arr, i8 scalar);
+iArray *modScalar(iArray *arr, i8 scalar);
 
 iArray *neg(iArray *arr);
 iArray *absiArray(iArray *arr);
@@ -44,6 +48,7 @@ float *dequantize(iTensor *tensor);
 
 iTensor *rebase(iTensor *A, iTensor *B); //in place rebase B to A
 iTensor *addTensors(iTensor *A, iTensor *B);
-iTensor *rebaseIntrinsics(iTensor *A, float new_scale, int8_t new_zero_point);
+iTensor *rebaseIntrinsics(iTensor *A, float new_scale, i8 new_zero_point);
 
 float percentile(float *data, size_t *shape, size_t rank, float q);
+i8 roundi8(float x);

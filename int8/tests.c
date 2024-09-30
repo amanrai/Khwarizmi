@@ -25,9 +25,10 @@ int main() {
     size_t size = 16;
     float *a = (float *)malloc(size * sizeof(float));    
     randArray(a, -1.0, 1.0, size);
-    a[7] = 10.0f;
+    a[7] = 100.0;
     printArray(a, size);
     iTensor *t = quantize(a, &size, 1);
+    printf("\nmodified large value: %d", t->arr->data[7]);
     printiArray(t->arr);
     float *b = dequantize(t);
     printArray(b, size);
