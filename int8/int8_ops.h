@@ -45,6 +45,7 @@ iTensor *quantize(float *data, size_t *shape, size_t rank);
 iTensor *quantize_symmetric(float *data, size_t *shape, size_t rank); 
 iTensor *quantize_asymmetric_minmax(float *data, size_t *shape, size_t rank, float min, float max);
 float *dequantize(iTensor *tensor);
+void free_iTensor(iTensor *arr);
 
 iTensor *rebase(iTensor *A, iTensor *B); //in place rebase B to A
 iTensor *addTensors(iTensor *A, iTensor *B);

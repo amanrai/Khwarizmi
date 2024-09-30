@@ -223,7 +223,7 @@ float clamp(i8 value, i8 min, i8 max) {
     return fmin(fmax(value, min), max);
 }
 
-float clamp_int16(int16_t value) {
+i8 clamp_int16(int16_t value) {
     return (i8)fmin(fmax(value, -127), 127);
 }
 
@@ -238,7 +238,7 @@ iTensor *quantize_asymmetric_minmax(float *data, size_t *shape, size_t rank, flo
     tensor->scale = scale;
     tensor->zero_point = zero_point;
     for(size_t i = 0; i < tensor->arr->size; i++){        
-        int16_t q_val = (int16_t) roundi8(data[i] / scale) + zero_point;
+        int16_t q_val = (int16_t) roundi8(data[i] / scale) + zero_point; //if the zero_point is not 0, this has capacity to overflow, so store in an int16 instead.  
         q_val = clamp_int16(q_val);        
         tensor->arr->data[i] = q_val;
     }

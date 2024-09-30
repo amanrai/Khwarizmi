@@ -21,15 +21,26 @@ void printArray(float *data, int size) {
     printf("]\n");
 }
 
-int main() {
+void quantizationTest() {
     size_t size = 16;
     float *a = (float *)malloc(size * sizeof(float));    
-    randArray(a, -1.0, 1.0, size);
-    a[7] = 100.0;
+    randArray(a, -100.0, 100.0, size);
+    a[7] = 1000.0;
     printArray(a, size);
     iTensor *t = quantize(a, &size, 1);
     printf("\nmodified large value: %d", t->arr->data[7]);
     printiArray(t->arr);
     float *b = dequantize(t);
     printArray(b, size);
+    free(a);
+    free(b);
+    free_iTensor(t);
+}
+
+void rebaseTest() {
+
+}
+
+int main() {
+    quantizationTest();
 }
