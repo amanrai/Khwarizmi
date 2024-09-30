@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <math.h>
 
 #if defined(__AVX512F__)
     #define USING_INTRINSICS
@@ -9,6 +10,9 @@
     #define USING_INTRINSICS
 #elif defined(__ARM_NEON)
     #define USING_INTRINSICS
+    #include "iArray_neon.h"
+    #include "iTensor_neon.h"
+    #include "int8_ops.h"
 #else 
     #include "int8_ops.h"
 #endif
@@ -159,32 +163,81 @@ void printiArray(iArray *arr) {
     printf("\n");
 }
 
-iTensor *quantize(float *data) {
+float percentile(float *arr, size_t *shape, size_t rank, float percentile){
+    size_t size = 1;
+    for (size_t i = 0; i < rank; i++) {
+        size *= shape[i];
+    }
+    
+    float *new_arr = (float *)malloc(size * sizeof(float));
+
+    for(size_t i = 0; i < size; i++){
+        new_arr[i] = arr[i];
+    }
+
+    if (size <= 0 || percentile < 0 || percentile > 100) {
+        fprintf(stderr, "Invalid input parameters\n");
+        return NAN;
+    }
+    #pragma omp parallel for
+    for (size_t i = 0; i < size - 1; i++) {
+        for (size_t j = 0; j < size - i - 1; j++) {
+            if (new_arr[j] > new_arr[j + 1]) {
+                float temp = new_arr[j];
+                new_arr[j] = new_arr[j + 1];
+                new_arr[j + 1] = temp;
+            }
+        }
+    }
+
+    // Calculate the index
+    float index = (percentile / 100) * (size - 1);
+    int lower_index = (int)floor(index);
+    int upper_index = (int)ceil(index);
+
+    if (lower_index == upper_index) {
+        free(new_arr);
+        return new_arr[lower_index];
+    } else {
+        float lower_value = new_arr[lower_index];
+        float upper_value = new_arr[upper_index];
+        float fraction = index - lower_index;
+        free(new_arr);
+        return lower_value + fraction * (upper_value - lower_value);
+    }
+}
+
+float clamp(float value, float min, float max) {
+    return fmin(fmax(value, min), max);
+}
+
+iTensor *quantize_asymmetric_minmax(float *data, size_t *shape, size_t rank, float min, float max) {
     // https://www.youtube.com/watch?v=0VdNflU08yA - Asymmetric Quantization.
     iTensor *tensor = (iTensor *)malloc(sizeof(iTensor));
     tensor->arr = create(shape, rank);
-    float min = data[0];
-    float max = data[0];
-    for(size_t i = 0; i < tensor->arr->size; i++){
-        if (data[i] < min){
-            min = data[i];
-        }
-        if (data[i] > max){
-            max = data[i];
-        }
-    }
     float range = max - min;
-    float scale = range / 255;
-    int8_t zero_point = (int8_t)round(-min / scale);
+    float scale = range / 255; //2^num_bits - 1
+    int8_t zero_point = (int8_t)-1*round(min / scale);
+    printf("Quantizing with min: %f, max: %f, range: %f, scale: %f, zero_point: %d\n", min, max, range, scale, zero_point);
     tensor->scale = scale;
     tensor->zero_point = zero_point;
-    for(size_t i = 0; i < tensor->arr->size; i++){
-        tensor->arr->data[i] = (int8_t)round(data[i] / scale) + zero_point;
+    for(size_t i = 0; i < tensor->arr->size; i++){        
+        int8_t q_val = clamp((int8_t)round(data[i] / scale) + zero_point, 0, 255);
+        tensor->arr->data[i] = q_val;
     }
     return tensor;
 }
 
-iTensor *quantize_symmetric(float *data) {
+iTensor *quantize(float *data, size_t *shape, size_t rank) {
+    // https://www.youtube.com/watch?v=0VdNflU08yA - Asymmetric Quantization with Percentiles.
+    //Only real requirement is larger values remain larger than smaller values. 
+    float q = 99.99;
+    float max = percentile(data, shape, rank, q);
+    float min = percentile(data, shape, rank, 100-q);    
+    return quantize_asymmetric_minmax(data, shape, rank, min, max);
+}
+
+iTensor *quantize_symmetric(float *data, size_t *shape, size_t rank) {
     // https://www.youtube.com/watch?v=0VdNflU08yA - Symmetric Quantization.
     iTensor *tensor = (iTensor *)malloc(sizeof(iTensor));
     tensor->arr = create(shape, rank);
@@ -211,6 +264,16 @@ float *dequantize(iTensor *tensor){
         data[i] = (tensor->arr->data[i] - tensor->zero_point) * tensor->scale;
     }
     return data;
+}
+
+iTensor *rebase(iTensor *A, iTensor *B) {
+    //in place rebase B to A
+    #pragma omp parallel for
+    for(size_t i = 0; i < A->arr->size; i++){
+        B->arr->data[i] = (int8_t)round((B->arr->data[i] - B->zero_point) * B->scale / A->scale) + A->zero_point;
+    }
+    B->scale = A->scale;
+    B->zero_point = A->zero_point;
 }
 
 void deep_print(iArray *arr, int dimension, int start_at) {
@@ -312,17 +375,34 @@ iArray *absiArray(iArray *arr){
 
 #endif
 
-int main(){
-    int rank = 2;
-    size_t shape[2] = {16,16};
-    iArray *arr1 = from_random(shape, rank, 0, 10);
-    printiArray(arr1);
-    iArray *arr2 = from_random(shape, rank, -10, 10);
-    printiArray(arr2);
-    iArray *result = mul(arr1, arr2);
-    printiArray(result);
-    free_iArray(arr1);
-    free_iArray(arr2);
-    free_iArray(result);
-    return 0;
-}
+// int main(){
+//     // int rank = 2;
+//     // size_t shape[2] = {16,16};
+//     // iArray *arr1 = from_random(shape, rank, 0, 10);
+//     // printiArray(arr1);
+//     // iArray *arr2 = from_random(shape, rank, -10, 10);
+//     // printiArray(arr2);
+//     // iArray *result = mul(arr1, arr2);
+//     // printiArray(result);
+//     // free_iArray(arr1);
+//     // free_iArray(arr2);
+//     // free_iArray(result);
+//     return 0;
+// }
+
+
+
+
+
+
+/*
+for (int i = 0; i < size - 1; i++) {
+        for (int j = 0; j < size - i - 1; j++) {
+            if (arr[j] > arr[j + 1]) {
+                float temp = arr[j];
+                arr[j] = arr[j + 1];
+                arr[j + 1] = temp;
+            }
+        }
+    }
+*/

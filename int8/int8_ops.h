@@ -12,7 +12,7 @@ typedef struct iTensor {
     iArray *arr;
     int8_t zero_point;
     float scale;
-}
+} iTensor;
 
 void printiArray(iArray *arr);
 void deep_print(iArray *arr, int dimension, int start_at);
@@ -37,6 +37,13 @@ iArray *modScalar(iArray *arr, int8_t scalar);
 iArray *neg(iArray *arr);
 iArray *absiArray(iArray *arr);
 
-iTensor *quantize(float *data);
-iTensor *quantize_symmetric(float *data); 
+iTensor *quantize(float *data, size_t *shape, size_t rank);
+iTensor *quantize_symmetric(float *data, size_t *shape, size_t rank); 
+iTensor *quantize_asymmetric_minmax(float *data, size_t *shape, size_t rank, float min, float max);
 float *dequantize(iTensor *tensor);
+
+iTensor *rebase(iTensor *A, iTensor *B); //in place rebase B to A
+iTensor *addTensors(iTensor *A, iTensor *B);
+iTensor *rebaseIntrinsics(iTensor *A, float new_scale, int8_t new_zero_point);
+
+float percentile(float *data, size_t *shape, size_t rank, float q);
